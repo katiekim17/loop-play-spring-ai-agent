@@ -147,4 +147,22 @@ public Flux<String> chatStream(@RequestBody ChatRequest req) {
 
 ---
 
+## 학습 기록 요약
+
+**내가 배운 것**
+- SSE와 REST는 체감 속도가 다르지만 토큰 소비량과 응답 정확성은 동일 — 전송 방식만 다를 뿐 LLM 연산은 같다
+- `builder.build()`를 매 요청마다 호출해도 괜찮은 이유 — `OllamaApi`(HTTP 연결 풀)는 `Builder` 싱글톤 안에 있고, `.build()`는 설정 객체만 만드는 가벼운 작업이다
+- Spring AI가 `.entity(SupportResponse.class)` 호출 시 JSON 스키마를 User 메시지에 자동 주입한다는 것을 DEBUG 로그로 직접 확인
+
+**의문점**
+- System Prompt 2배 실험을 2배 한 가지만 측정했는데 3배로 늘리면 토큰도 선형으로 느는지 확인 안 했다
+- JSON 스키마가 System이 아닌 User 메시지에 붙는 이유가 Ollama 같은 로컬 모델이 System 지시를 잘 무시해서라고 했는데, GPT-4 같은 클라우드 모델에서도 같은 방식인지 궁금하다
+
+**다음 주차 아이디어**
+- Tool Calling으로 조건부 취소·환불 구현 (배달 출발 전 → 자동 취소, 출발 후 → 상담원 연결)
+- 대화 히스토리 저장 및 멀티턴 상담 구현, 히스토리 압축 기준 실험
+- LLM이 틀린 Tool을 호출해도 피해가 없도록 Tool 자체에 조건 검사 설계
+
+---
+
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
