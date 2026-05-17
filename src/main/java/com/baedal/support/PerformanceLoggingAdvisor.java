@@ -34,6 +34,24 @@ public class PerformanceLoggingAdvisor implements CallAdvisor {
     // 구현 후 SupportController에서 .defaultAdvisors(performanceAdvisor)로 등록하라.
     @Override
     public ChatClientResponse adviseCall(ChatClientRequest request, CallAdvisorChain chain) {
-        throw new UnsupportedOperationException("TODO: 구현하세요");
+        long start = System.currentTimeMillis();
+        ChatClientResponse response = chain.nextCall(request);
+        long elapsed = System.currentTimeMillis() - start;
+
+        var chatResponse = response.chatResponse();
+        if (chatResponse != null && chatResponse.getMetadata() != null) {
+            var usage = chatResponse.getMetadata().getUsage();
+            if (usage != null) {
+                log.info("[PerformanceLoggingAdvisor] elapsed={}ms inputTokens={} outputTokens={} totalTokens={}",
+                        elapsed,
+                        usage.getPromptTokens(),
+                        usage.getCompletionTokens(),
+                        usage.getTotalTokens());
+            }
+        } else {
+            log.info("[PerformanceLoggingAdvisor] elapsed={}ms (token metadata unavailable)", elapsed);
+        }
+
+        return response;
     }
 }

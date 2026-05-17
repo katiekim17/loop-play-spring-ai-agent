@@ -26,6 +26,9 @@ class SupportControllerTest {
     @MockBean
     private ChatClient.Builder builder;
 
+    @MockBean
+    private PerformanceLoggingAdvisor performanceAdvisor;
+
     private SupportResponse deliveryResponse;
 
     @BeforeEach
@@ -45,6 +48,7 @@ class SupportControllerTest {
         ChatClient.CallResponseSpec callSpec = mock(ChatClient.CallResponseSpec.class);
 
         when(builder.defaultSystem(anyString())).thenReturn(builder);
+        when(builder.defaultAdvisors(performanceAdvisor)).thenReturn(builder);
         when(builder.build()).thenReturn(chatClient);
         when(chatClient.prompt()).thenReturn(requestSpec);
         when(requestSpec.user(anyString())).thenReturn(requestSpec);
