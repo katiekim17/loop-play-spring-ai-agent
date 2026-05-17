@@ -28,7 +28,18 @@ public class PromptLabController {
     // - categoryConsistency 수치를 비교하여 README에 기록
     @PostMapping
     public PromptLabResult experiment(@RequestBody PromptLabRequest req) {
-        throw new UnsupportedOperationException("TODO: 구현하세요");
+        ChatClient client = builder
+                .defaultSystem(req.systemPrompt())
+                .build();
+
+        List<SupportResponse> results = new ArrayList<>();
+        for (int i = 0; i < req.repeat(); i++) {
+            results.add(client.prompt()
+                    .user(req.message())
+                    .call()
+                    .entity(SupportResponse.class));
+        }
+        return PromptLabResult.from(results);
     }
 
     public record PromptLabRequest(
