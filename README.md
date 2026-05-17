@@ -305,3 +305,186 @@ while (true) {
 ```
 
 `EventSource`는 GET 전용이므로 POST body가 있는 이 케이스에서는 `fetch` + `ReadableStream` 방식을 사용해야 한다.
+
+---
+
+## 4단계: Observability — PerformanceLoggingAdvisor
+
+### Advisor 측정 결과
+
+`PerformanceLoggingAdvisor`를 등록하면 모든 LLM 호출 후 아래 형태의 로그가 출력된다.
+
+```
+[PerformanceLoggingAdvisor] elapsed=25262ms inputTokens=748 outputTokens=108 totalTokens=856
+```
+
+**측정 환경**: Ollama (qwen2.5), MacBook, 로컬 실행
+
+---
+
+### System Prompt 길이 2배 실험 — 토큰 변화 관찰
+
+System Prompt에 `[추가 상담 지침]`, `[응답 품질 기준]`, `[카테고리 분류 기준]` 섹션을 추가해 분량을 약 2배로 늘린 뒤 동일한 메시지로 호출했다.
+
+| 측정 항목 | 원본 프롬프트 | 2배 프롬프트 | 변화 |
+|-----------|-------------|-------------|------|
+| inputTokens | 748 | 1233 | +485 (+65%) |
+| outputTokens | 108 | 94~96 | -12 (유사) |
+| totalTokens | 856 | 1327~1329 | +471 (+55%) |
+
+**관찰**:
+- System Prompt가 2배가 됐는데 inputTokens은 65% 증가에 그쳤다. 이는 Spring AI가 Structured Output을 위해 JSON 스키마를 프롬프트에 자동 주입하므로, 원본 input의 일부는 이미 Spring AI 주입분이기 때문이다.
+- outputTokens은 거의 변하지 않았다. LLM은 System Prompt 길이에 상관없이 동일한 JSON 구조를 생성한다.
+- **프롬프트가 길어질수록 비용과 응답 시간이 선형으로 증가한다.** 규칙이 많아질수록 토큰 비용도 함께 늘어난다.
+
+---
+
+### 실제 LLM에 전달되는 프롬프트 구조
+
+Spring AI의 Structured Output은 내부적으로 다음 구조로 LLM에 프롬프트를 전달한다.
+
+```
+[System Message]
+<BaedalPrompt.SYSTEM_PROMPT 전체 내용>
+
+IMPORTANT: Your response must be a valid JSON that follows this JSON schema:
+{
+  "type": "object",
+  "properties": {
+    "summary": { "type": "string" },
+    "category": { "enum": ["ORDER","DELIVERY","REFUND","PAYMENT","COMPLAINT","ETC"] },
+    "urgency": { "enum": ["LOW","NORMAL","HIGH","CRITICAL"] },
+    "nextAction": { "type": "string" },
+    "neededInfo": { "type": "array", "items": { "type": "string" } },
+    "estimatedResolutionMinutes": { "type": "integer" },
+    "actionability": { "enum": ["IMMEDIATE","NEEDS_INFO","NEEDS_REVIEW","ESCALATED"] }
+  }
+}
+
+[Human Message]
+주문번호 2024-1234 배달 어디쯤에 있어요?
+```
+
+Spring AI가 `.entity(SupportResponse.class)` 호출 시 Java 클래스를 분석해 JSON 스키마를 자동 생성하여 System Message 끝에 추가한다. 이 주입분이 원본 input 748 토큰 중 상당 부분을 차지한다.
+
+---
+
+### AI 코드 리뷰: 나이브한 챗봇 코드의 3가지 프로덕션 문제
+
+"가장 단순한 Spring AI 챗봇을 짜줘"라고 AI에게 요청하면 아래와 같은 코드를 받기 쉽다.
+
+```java
+// AI가 생성한 "단순한" 코드 — 프로덕션 배포 금지
+@RestController
+public class SimpleChatController {
+
+    @PostMapping("/chat")
+    public String chat(@RequestParam String message) {
+        OllamaApi ollamaApi = new OllamaApi("http://localhost:11434");
+        OllamaChatModel model = new OllamaChatModel(
+            ollamaApi, OllamaOptions.builder().model("qwen2.5").build()
+        );
+        ChatClient client = ChatClient.builder(model).build();
+
+        return client.prompt()
+            .system("You are a helpful assistant.")
+            .user(message)
+            .call()
+            .content();
+    }
+}
+```
+
+#### 문제 1: 매 요청마다 `OllamaApi` + `ChatClient` 재생성
+
+`OllamaApi`는 내부에 HTTP 연결 풀을 보유한다. `ChatClient`도 설정 객체를 포함한 무거운 인스턴스다. 이를 매 요청마다 `new`로 생성하면 HTTP 연결을 매번 새로 열고 닫아 **성능이 요청마다 저하**된다. 부하가 높을 때는 소켓 고갈(CLOSE_WAIT 축적)까지 발생한다.
+
+**수정**: Spring IoC가 관리하는 싱글톤 Bean으로 주입받는다.
+
+```java
+@RestController
+@RequiredArgsConstructor
+public class FixedChatController {
+
+    private final ChatClient chatClient;  // Builder로 한 번만 생성, 재사용
+
+    @PostMapping("/chat")
+    public String chat(@RequestBody ChatRequest req) {
+        return chatClient.prompt()
+            .user(req.message())
+            .call()
+            .content();
+    }
+}
+```
+
+#### 문제 2: `@RequestParam`으로 고객 메시지를 URL에 노출
+
+`/chat?message=주문번호 2024-1234 환불 요청`처럼 쿼리 파라미터로 오면 아래 장소에 고객 개인정보가 **평문으로 기록**된다.
+
+- Tomcat/Nginx access log
+- 브라우저 히스토리 및 Referer 헤더
+- CDN, WAF, 모니터링 시스템의 URL 인덱스
+
+배달 주문번호, 주소, 결제 정보가 로그에 남으면 개인정보보호법(PIPA) 위반 소지가 있다.
+
+**수정**: `@RequestBody`로 변경해 POST body로 수신한다.
+
+```java
+// 변경 전
+public String chat(@RequestParam String message)
+
+// 변경 후
+public String chat(@RequestBody ChatRequest req)  // ChatRequest는 record { String message; }
+```
+
+#### 문제 3: 타임아웃 없음 — 스레드 풀 고갈 위험
+
+로컬 Ollama가 느리거나 응답이 없으면 `.call()`이 **무한 대기**한다. 스프링 MVC의 기본 스레드 풀(200개)이 모두 LLM 응답을 기다리는 상태가 되면 새 요청을 받지 못해 서버 전체가 다운된다.
+
+**수정 1**: `application.yml`에 읽기 타임아웃 설정
+
+```yaml
+spring:
+  ai:
+    ollama:
+      chat:
+        options:
+          timeout: 30s  # 30초 초과 시 예외 발생
+```
+
+**수정 2**: 타임아웃 예외를 사용자 친화적 응답으로 처리
+
+```java
+@ExceptionHandler(RuntimeException.class)
+public ResponseEntity<String> handleTimeout(RuntimeException e) {
+    if (e.getMessage().contains("timeout") || e.getMessage().contains("timed out")) {
+        return ResponseEntity.status(503)
+            .body("잠시 후 다시 시도해 주세요. (서버 응답 지연)");
+    }
+    return ResponseEntity.status(500).body("처리 중 오류가 발생했습니다.");
+}
+```
+
+---
+
+### 설계 결정 문서
+
+#### `CallAdvisor` vs `RequestResponseAdvisor` — 왜 `CallAdvisor`인가
+
+Spring AI는 Advisor 인터페이스를 두 가지 제공한다.
+
+| 인터페이스 | 용도 |
+|-----------|------|
+| `CallAdvisor` | 동기 `.call()` 호출 인터셉트 |
+| `StreamAdvisor` | 스트리밍 `.stream()` 호출 인터셉트 |
+
+`PerformanceLoggingAdvisor`는 `/api/v1/support`의 Structured Output(동기)을 측정하므로 `CallAdvisor`가 적합하다. 스트리밍 엔드포인트에도 적용하려면 `StreamAdvisor`를 별도 구현해야 한다.
+
+#### `getOrder() = 100`을 준 이유
+
+Spring AOP와 동일하게 Advisor는 체인으로 동작한다. `getOrder()`가 낮을수록 체인 **바깥쪽**에 배치된다. `PerformanceLoggingAdvisor`는 LLM 왕복 전체 시간을 측정해야 하므로 100(큰 값 = 체인 바깥쪽)을 주어 시작부터 끝까지를 감싸도록 했다. 만약 로깅보다 먼저 실행돼야 하는 인증 Advisor가 있다면 그것에 더 낮은 값(예: 0)을 주면 된다.
+
+#### `chatResponse()`가 null일 수 있는 이유
+
+`ChatClientResponse`는 LLM 응답뿐 아니라 Advisor 체인 중간 상태도 담을 수 있다. 테스트 환경이나 특정 에러 상황에서 `chatResponse()`가 null을 반환할 수 있어, null 체크 없이 `.getMetadata().getUsage()`를 바로 호출하면 `NullPointerException`이 발생한다. 방어적 null 체크는 필수다.
