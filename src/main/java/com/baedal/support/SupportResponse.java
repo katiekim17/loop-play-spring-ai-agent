@@ -8,8 +8,10 @@ public record SupportResponse(
         Urgency urgency,
         String nextAction,
         List<String> neededInfo,
-        Integer estimatedResolutionMinutes
+        Integer estimatedResolutionMinutes,
+        Actionability actionability
 ) {
-    public enum Category { ORDER, DELIVERY, REFUND, PAYMENT, COMPLAINT, ETC }
-    public enum Urgency  { LOW, NORMAL, HIGH, CRITICAL }
+    public enum Category     { ORDER, DELIVERY, REFUND, PAYMENT, COMPLAINT, ETC }
+    public enum Urgency      { LOW, NORMAL, HIGH, CRITICAL }
+    public enum Actionability { IMMEDIATE, NEEDS_INFO, NEEDS_REVIEW, ESCALATED }
 }

@@ -36,7 +36,8 @@ class SupportControllerTest {
             SupportResponse.Urgency.NORMAL,
             "주문 현황 페이지를 확인하세요.",
             List.of("주문번호"),
-            10
+            10,
+            SupportResponse.Actionability.NEEDS_INFO
         );
 
         ChatClient chatClient = mock(ChatClient.class);

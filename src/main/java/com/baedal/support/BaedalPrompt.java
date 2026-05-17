@@ -36,6 +36,12 @@ public final class BaedalPrompt {
             1) 핵심 답변 (3문장 이내 요약)
             2) 필요 시 추가 확인 질문
             3) 다음에 취할 액션 제안
+
+            [actionability 분류 기준]
+            - IMMEDIATE: 고객이 앱에서 즉시 처리 가능 (접수 직후 주문 취소 등)
+            - NEEDS_INFO: 주문번호 등 추가 정보만 있으면 처리 가능
+            - NEEDS_REVIEW: 정책 검토 또는 담당팀 확인이 필요한 사안
+            - ESCALATED: 법적·의료적 판단 등 상위팀 이관이 필요한 사안
             """;
 
     private BaedalPrompt() {}
