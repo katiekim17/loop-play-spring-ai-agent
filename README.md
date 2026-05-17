@@ -32,12 +32,13 @@ POST /api/v1/support
 ```
 ```json
 {
-  "summary": "주문번호 2024-1234의 배달 위치를 알려드리겠습니다.",
+  "summary": "주문번호 2024-1234의 배송 위치를 알려주시면 현재 배송 상황을 안내해 드리겠습니다.",
   "category": "DELIVERY",
   "urgency": "NORMAL",
-  "nextAction": "배달 진행 상황을 확인합니다.",
-  "neededInfo": [],
-  "estimatedResolutionMinutes": 5
+  "nextAction": "배달 상태 확인 후 답변 제공",
+  "neededInfo": ["현재 배달 위치"],
+  "estimatedResolutionMinutes": 15,
+  "actionability": "NEEDS_INFO"
 }
 ```
 
@@ -48,12 +49,13 @@ POST /api/v1/support
 ```
 ```json
 {
-  "summary": "즉시 주문을 취소할 수 있습니다.",
+  "summary": "주문 취소를 원하시는 것으로 이해했습니다. 주문번호를 알려주시면 즉시 처리하겠습니다.",
   "category": "ORDER",
   "urgency": "NORMAL",
-  "nextAction": "주문 취소 요청 처리",
+  "nextAction": "주문 취소 요청 접수 후 처리",
   "neededInfo": ["주문번호"],
-  "estimatedResolutionMinutes": 15
+  "estimatedResolutionMinutes": 15,
+  "actionability": "NEEDS_INFO"
 }
 ```
 
@@ -64,16 +66,17 @@ POST /api/v1/support
 ```
 ```json
 {
-  "summary": "보상 여부는 배송 상황과 정책에 따라 다릅니다.",
-  "category": "DELIVERY",
+  "summary": "라이더가 음식을 엎었다는 사항으로 보상 여부를 확인해야 합니다.",
+  "category": "COMPLAINT",
   "urgency": "NORMAL",
-  "nextAction": "라이더와 연락하여 상황을 확인합니다.",
-  "neededInfo": ["주문번호", "배달 주소"],
-  "estimatedResolutionMinutes": 30
+  "nextAction": "추가 정보를 제공해 주시면 확인 후 처리하겠습니다.",
+  "neededInfo": ["주문번호", "사고 발생 시간"],
+  "estimatedResolutionMinutes": 30,
+  "actionability": "NEEDS_INFO"
 }
 ```
 
-> **관찰**: 시나리오 3은 `COMPLAINT`가 아닌 `DELIVERY`로 분류되었다. 시스템 프롬프트에 각 Category 값의 의미를 명시하지 않았기 때문에 LLM이 새로 추가된 `COMPLAINT` enum을 활용하지 못했다. 시스템 프롬프트의 `[응답 포맷]` 섹션에 카테고리별 분류 기준을 추가하면 개선된다.
+> **관찰**: `actionability` 필드와 프롬프트에 분류 기준을 명시한 후 시나리오 3이 `DELIVERY`에서 `COMPLAINT`로 올바르게 분류되었다. LLM이 enum 값을 제대로 활용하려면 프롬프트에 각 값의 의미를 명시해야 한다.
 
 ---
 
@@ -108,6 +111,17 @@ POST /api/v1/support
 고객이 가장 자주 묻는 "얼마나 걸려요?"를 구조화된 숫자로 뽑아낸다. `urgency`는 우선순위만 나타내고 시간 정보는 없다. 숫자 필드로 만들면 프론트엔드에서 "약 N분 소요 예정" 형태로 바로 렌더링 가능하고, LLM이 urgency + category를 종합해 추론하도록 유도한다.
 
 실제 응답에서 나온 값:
-- 배달 위치 확인: 5분
+- 배달 위치 확인: 15분
 - 주문 취소: 15분
 - 라이더 사고 확인: 30분
+
+#### 추가 필드 `actionability` 선택 근거
+
+`nextAction`은 자유 텍스트라 "즉시 처리 가능"과 "담당팀 확인 필요"를 구조적으로 구별할 방법이 없었다. `actionability` enum으로 처리 가능 여부를 명확히 분리하면 프론트엔드에서 "지금 바로 처리 가능" / "정보 입력 필요" / "담당팀 검토 중" 같은 상태 UI를 직접 렌더링할 수 있다.
+
+| 값 | 의미 | 예시 |
+|----|------|------|
+| `IMMEDIATE` | 고객이 앱에서 즉시 처리 가능 | 접수 직후 주문 취소 |
+| `NEEDS_INFO` | 추가 정보만 있으면 처리 가능 | 주문번호 미제공 |
+| `NEEDS_REVIEW` | 정책 검토 또는 담당팀 확인 필요 | 보상 금액 산정 |
+| `ESCALATED` | 상위팀 이관 필요 | 법적·의료적 사안 |
