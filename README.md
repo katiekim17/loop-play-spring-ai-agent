@@ -210,3 +210,98 @@ POST /api/v1/support
 - 모델이 충분히 강력해서 컨텍스트만으로 올바른 분류 가능
 - 프롬프트가 너무 길어 모델의 주의가 분산될 때
 - 빠른 프로토타이핑, 실험 단계
+
+---
+
+## 3단계: Streaming 응답
+
+### 동기 vs 스트리밍 체감 속도 비교
+
+동일 메시지: `"주문번호 2024-1234 배달 어디쯤에 있어요?"`
+
+| | 동기 `/api/v1/chat` | 스트리밍 `/api/v1/chat/stream` |
+|--|--|--|
+| 첫 글자까지 | **20.3초 후** | **3.6초 후** |
+| 전체 완료 | 20.3초 | 8.3초 |
+| 화면 변화 | 20초 빈 화면 → 갑자기 전체 출력 | 3.6초부터 글자 하나씩 타이핑 |
+
+스트리밍 SSE 출력 샘플:
+```
+data:배
+data:송
+data: 위치
+data:를
+data: 확인
+data:해
+data: 드
+data:리
+data:겠습니다
+...
+```
+
+토큰이 생성될 때마다 `data:` 접두어와 함께 클라이언트로 즉시 전송된다.
+
+---
+
+### 설계 결정 문서
+
+#### Streaming을 모든 엔드포인트에 적용해야 하는가?
+
+**아니다.** `/api/v1/support`(Structured Output)에 `.stream()`을 쓰면 동작하지 않는다.
+
+`.entity(SupportResponse.class)`는 LLM 응답 **전체**를 받아 JSON으로 파싱하는 방식이다. `.stream()`은 토큰을 조각 단위로 보내므로 파싱 시점에 JSON이 미완성 상태다.
+
+```
+스트리밍 토큰 조각: {"summ          → JSON.parse() → ❌ SyntaxError
+스트리밍 토큰 조각: {"summary":"배달  → JSON.parse() → ❌ SyntaxError
+완성된 전체 응답:  {"summary":"배달 현황",...} → ✅ 성공
+```
+
+| 목적 | 방식 | 이유 |
+|------|------|------|
+| 정형 데이터 필요 (분류, 필드) | `.call()` + `.entity()` | 전체 JSON이 완성돼야 파싱 가능 |
+| 빠른 체감 응답 (채팅) | `.stream()` + `Flux<String>` | 토큰 단위 전송으로 첫 글자 빠름 |
+
+#### 스트리밍과 REST의 응답 정확도 차이
+
+**없다.** LLM은 항상 토큰을 순서대로 생성한다. Streaming은 그 토큰을 만들자마자 보내는 것이고, REST는 다 만들고 한번에 보내는 것이다. LLM이 하는 연산은 동일하므로 응답 품질도 동일하다.
+
+토큰 소비량도 동일하다. 비용 차이 없음.
+
+#### System Prompt를 스트리밍에 그대로 쓰면 생기는 문제
+
+이번 실험에서 스트리밍 응답에 `IMMEDIATE:` 같은 텍스트가 출력됐다.
+
+```
+data: IMM
+data:EDIATE
+data::
+data: 고객이 앱에서 배송 위치를 확인할 수 있도록...
+```
+
+`BaedalPrompt.SYSTEM_PROMPT`의 `[actionability 분류 기준]` 섹션(IMMEDIATE, NEEDS_INFO 등)이 자유 텍스트 스트리밍 응답에 **그대로 노출**됐다. 이 프롬프트는 Structured Output용으로 설계된 것이어서 JSON 스키마 유도 지시가 포함돼 있다.
+
+**결론**: 엔드포인트 목적에 따라 System Prompt를 분리해야 한다.
+- `/api/v1/support` → `BaedalPrompt.SYSTEM_PROMPT` (structured output 지시 포함)
+- `/api/v1/chat/stream` → 별도의 대화형 프롬프트 (분류 지시 없이 자연스러운 응대만)
+
+#### 프론트엔드 변경 사항
+
+일반 REST와 달리 SSE 스트리밍은 프론트엔드에서 연결을 열린 상태로 유지하며 토큰을 수신할 때마다 화면을 업데이트해야 한다.
+
+```javascript
+// REST — 완성된 응답을 한번에 렌더링
+const res = await fetch("/api/v1/chat", { method: "POST", body });
+render(await res.json());
+
+// SSE Streaming — 토큰 올 때마다 화면에 추가
+const res = await fetch("/api/v1/chat/stream", { method: "POST", body });
+const reader = res.body.getReader();
+while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    appendToScreen(new TextDecoder().decode(value));
+}
+```
+
+`EventSource`는 GET 전용이므로 POST body가 있는 이 케이스에서는 `fetch` + `ReadableStream` 방식을 사용해야 한다.
