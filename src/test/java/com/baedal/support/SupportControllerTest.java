@@ -76,4 +76,25 @@ class SupportControllerTest {
 
         org.mockito.Mockito.verify(builder).defaultSystem(BaedalPrompt.SYSTEM_PROMPT);
     }
+
+    @Test
+    void triage_returns_503_when_llm_call_fails() throws Exception {
+        ChatClient chatClient = mock(ChatClient.class);
+        ChatClient.ChatClientRequestSpec requestSpec = mock(ChatClient.ChatClientRequestSpec.class);
+        ChatClient.CallResponseSpec callSpec = mock(ChatClient.CallResponseSpec.class);
+
+        when(builder.defaultSystem(anyString())).thenReturn(builder);
+        when(builder.defaultAdvisors(performanceAdvisor)).thenReturn(builder);
+        when(builder.build()).thenReturn(chatClient);
+        when(chatClient.prompt()).thenReturn(requestSpec);
+        when(requestSpec.user(anyString())).thenReturn(requestSpec);
+        when(requestSpec.call()).thenReturn(callSpec);
+        when(callSpec.entity(SupportResponse.class)).thenThrow(new RuntimeException("LLM unavailable"));
+
+        mockMvc.perform(post("/api/v1/support")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"message\": \"주문번호 2024-1234 배달 어디쯤에 있어요?\"}"))
+            .andExpect(status().isServiceUnavailable())
+            .andExpect(jsonPath("$.message").value("일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."));
+    }
 }
