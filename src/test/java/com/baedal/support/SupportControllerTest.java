@@ -78,6 +78,16 @@ class SupportControllerTest {
     }
 
     @Test
+    void triage_registers_performance_logging_advisor() throws Exception {
+        mockMvc.perform(post("/api/v1/support")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"message\": \"테스트\"}"))
+                .andExpect(status().isOk());
+
+        org.mockito.Mockito.verify(builder).defaultAdvisors(performanceAdvisor);
+    }
+
+    @Test
     void triage_returns_503_when_llm_call_fails() throws Exception {
         ChatClient chatClient = mock(ChatClient.class);
         ChatClient.ChatClientRequestSpec requestSpec = mock(ChatClient.ChatClientRequestSpec.class);

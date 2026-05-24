@@ -1,5 +1,6 @@
 package com.baedal.support;
 
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.http.MediaType;
@@ -27,13 +28,14 @@ public class StreamingChatController {
     //
     // 글자가 한 글자씩 타이핑되듯 나타나면 성공입니다.
     @PostMapping(produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<String> chatStream(@RequestBody ChatRequest req) {
+    public Flux<String> chatStream(@Valid @RequestBody ChatRequest req) {
         return builder
                 .defaultSystem(BaedalPrompt.SYSTEM_PROMPT)
                 .build()
                 .prompt()
                 .user(req.message())
                 .stream()
-                .content();
+                .content()
+                .onErrorResume(e -> Flux.just("[오류] 요청 처리 중 오류가 발생했습니다."));
     }
 }
