@@ -35,23 +35,35 @@ public class PerformanceLoggingAdvisor implements CallAdvisor {
     @Override
     public ChatClientResponse adviseCall(ChatClientRequest request, CallAdvisorChain chain) {
         long start = System.currentTimeMillis();
-        ChatClientResponse response = chain.nextCall(request);
-        long elapsed = System.currentTimeMillis() - start;
-
-        var chatResponse = response.chatResponse();
-        if (chatResponse != null && chatResponse.getMetadata() != null) {
-            var usage = chatResponse.getMetadata().getUsage();
-            if (usage != null) {
-                log.info("[PerformanceLoggingAdvisor] elapsed={}ms inputTokens={} outputTokens={} totalTokens={}",
-                        elapsed,
-                        usage.getPromptTokens(),
-                        usage.getCompletionTokens(),
-                        usage.getTotalTokens());
-            }
-        } else {
-            log.info("[PerformanceLoggingAdvisor] elapsed={}ms (token metadata unavailable)", elapsed);
+        ChatClientResponse response = null;
+        try {
+            response = chain.nextCall(request);
+            return response;
+        } finally {
+            long elapsed = System.currentTimeMillis() - start;
+            logUsage(elapsed, response);
         }
+    }
 
-        return response;
+    private void logUsage(long elapsed, ChatClientResponse response) {
+        if (response == null) {
+            log.info("[PerformanceLoggingAdvisor] elapsed={}ms (call failed)", elapsed);
+            return;
+        }
+        var chatResponse = response.chatResponse();
+        if (chatResponse == null || chatResponse.getMetadata() == null) {
+            log.info("[PerformanceLoggingAdvisor] elapsed={}ms (token metadata unavailable)", elapsed);
+            return;
+        }
+        var usage = chatResponse.getMetadata().getUsage();
+        if (usage == null) {
+            log.info("[PerformanceLoggingAdvisor] elapsed={}ms (usage unavailable)", elapsed);
+            return;
+        }
+        log.info("[PerformanceLoggingAdvisor] elapsed={}ms inputTokens={} outputTokens={} totalTokens={}",
+                elapsed,
+                usage.getPromptTokens(),
+                usage.getCompletionTokens(),
+                usage.getTotalTokens());
     }
 }
