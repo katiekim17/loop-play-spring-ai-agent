@@ -80,4 +80,46 @@ class PromptLabControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.categoryCounts.DELIVERY").value(2));
     }
+
+    @Test
+    void experiment_returns_400_when_repeat_is_zero() throws Exception {
+        mockMvc.perform(post("/api/v1/prompt-lab")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "systemPrompt": "당신은 배달 고객 상담 AI입니다.",
+                      "message": "배달 어디쯤이에요?",
+                      "repeat": 0
+                    }
+                    """))
+            .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void experiment_returns_400_when_repeat_exceeds_max() throws Exception {
+        mockMvc.perform(post("/api/v1/prompt-lab")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "systemPrompt": "당신은 배달 고객 상담 AI입니다.",
+                      "message": "배달 어디쯤이에요?",
+                      "repeat": 1000
+                    }
+                    """))
+            .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void experiment_returns_400_when_message_is_blank() throws Exception {
+        mockMvc.perform(post("/api/v1/prompt-lab")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "systemPrompt": "당신은 배달 고객 상담 AI입니다.",
+                      "message": "",
+                      "repeat": 3
+                    }
+                    """))
+            .andExpect(status().isBadRequest());
+    }
 }
