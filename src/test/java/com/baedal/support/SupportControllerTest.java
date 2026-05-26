@@ -13,6 +13,7 @@ import java.util.List;
 
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -29,7 +30,11 @@ class SupportControllerTest {
     @MockBean
     private PerformanceLoggingAdvisor performanceAdvisor;
 
+    @MockBean
+    private OrderTools orderTools;
+
     private SupportResponse deliveryResponse;
+    private ChatClient.ChatClientRequestSpec requestSpec;
 
     @BeforeEach
     void setUp() {
@@ -44,7 +49,7 @@ class SupportControllerTest {
         );
 
         ChatClient chatClient = mock(ChatClient.class);
-        ChatClient.ChatClientRequestSpec requestSpec = mock(ChatClient.ChatClientRequestSpec.class);
+        requestSpec = mock(ChatClient.ChatClientRequestSpec.class);
         ChatClient.CallResponseSpec callSpec = mock(ChatClient.CallResponseSpec.class);
 
         when(builder.defaultSystem(anyString())).thenReturn(builder);
@@ -52,6 +57,7 @@ class SupportControllerTest {
         when(builder.build()).thenReturn(chatClient);
         when(chatClient.prompt()).thenReturn(requestSpec);
         when(requestSpec.user(anyString())).thenReturn(requestSpec);
+        when(requestSpec.tools(orderTools)).thenReturn(requestSpec);
         when(requestSpec.call()).thenReturn(callSpec);
         when(callSpec.entity(SupportResponse.class)).thenReturn(deliveryResponse);
     }
@@ -74,7 +80,7 @@ class SupportControllerTest {
                 .content("{\"message\": \"테스트\"}"))
             .andExpect(status().isOk());
 
-        org.mockito.Mockito.verify(builder).defaultSystem(BaedalPrompt.SYSTEM_PROMPT);
+        verify(builder).defaultSystem(BaedalPrompt.SYSTEM_PROMPT);
     }
 
     @Test
@@ -84,21 +90,32 @@ class SupportControllerTest {
                         .content("{\"message\": \"테스트\"}"))
                 .andExpect(status().isOk());
 
-        org.mockito.Mockito.verify(builder).defaultAdvisors(performanceAdvisor);
+        verify(builder).defaultAdvisors(performanceAdvisor);
+    }
+
+    @Test
+    void triage_registers_order_tools_per_request() throws Exception {
+        mockMvc.perform(post("/api/v1/support")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"message\": \"테스트\"}"))
+                .andExpect(status().isOk());
+
+        verify(requestSpec).tools(orderTools);
     }
 
     @Test
     void triage_returns_503_when_llm_call_fails() throws Exception {
         ChatClient chatClient = mock(ChatClient.class);
-        ChatClient.ChatClientRequestSpec requestSpec = mock(ChatClient.ChatClientRequestSpec.class);
+        ChatClient.ChatClientRequestSpec failSpec = mock(ChatClient.ChatClientRequestSpec.class);
         ChatClient.CallResponseSpec callSpec = mock(ChatClient.CallResponseSpec.class);
 
         when(builder.defaultSystem(anyString())).thenReturn(builder);
         when(builder.defaultAdvisors(performanceAdvisor)).thenReturn(builder);
         when(builder.build()).thenReturn(chatClient);
-        when(chatClient.prompt()).thenReturn(requestSpec);
-        when(requestSpec.user(anyString())).thenReturn(requestSpec);
-        when(requestSpec.call()).thenReturn(callSpec);
+        when(chatClient.prompt()).thenReturn(failSpec);
+        when(failSpec.user(anyString())).thenReturn(failSpec);
+        when(failSpec.tools(orderTools)).thenReturn(failSpec);
+        when(failSpec.call()).thenReturn(callSpec);
         when(callSpec.entity(SupportResponse.class)).thenThrow(new RuntimeException("LLM unavailable"));
 
         mockMvc.perform(post("/api/v1/support")
