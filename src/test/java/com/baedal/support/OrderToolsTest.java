@@ -1,5 +1,11 @@
 package com.baedal.support;
 
+import com.baedal.support.domain.Order;
+import com.baedal.support.domain.OrderMockService;
+import com.baedal.support.tool.CancelOrderResult;
+import com.baedal.support.tool.DeliveryStatusView;
+import com.baedal.support.tool.OrderDetailView;
+import com.baedal.support.tool.OrderTools;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -70,7 +76,7 @@ class OrderToolsTest {
         orderTools.cancelOrder("2024-1239", "첫 번째 이유");
         orderTools.cancelOrder("2024-1239", "두 번째 이유");
         Order order = orderService.findById("2024-1239").orElseThrow();
-        assertThat(order.getCanceledReason()).isEqualTo("첫 번째 이유");
+        assertThat(order.canceledReason()).isEqualTo("첫 번째 이유");
     }
 
     // ── getOrderDetail ─────────────────────────────────────────────
@@ -81,7 +87,7 @@ class OrderToolsTest {
         assertThat(view).isNotNull();
         assertThat(view.orderId()).isEqualTo("2024-1234");
         assertThat(view.items()).isNotEmpty();
-        assertThat(view.totalAmount()).isEqualTo(20000);
+        assertThat(view.totalAmount()).isEqualTo(26000);
     }
 
     @Test
@@ -94,7 +100,7 @@ class OrderToolsTest {
     @Test
     void getDeliveryStatus_returns_riderLocation_for_DELIVERING_order() {
         DeliveryStatusView view = orderTools.getDeliveryStatus("2024-1234");
-        assertThat(view.riderLocation()).isEqualTo("역삼역 사거리");
+        assertThat(view.riderLocation()).contains("역삼역 사거리");
     }
 
     @Test

@@ -1,5 +1,8 @@
 package com.baedal.support;
 
+import com.baedal.support.domain.Order;
+import com.baedal.support.domain.OrderItem;
+import com.baedal.support.domain.OrderStatus;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -14,7 +17,7 @@ class OrderTest {
     private Order order(OrderStatus status) {
         return new Order("2024-0001", "테스트가게",
                 List.of(new OrderItem("메뉴", 1, 10000)),
-                10000, LocalDateTime.now(), LocalDateTime.now().plusMinutes(30),
+                LocalDateTime.now(), LocalDateTime.now().plusMinutes(30),
                 "서울시 강남구 테헤란로 1", null, status);
     }
 
@@ -41,8 +44,8 @@ class OrderTest {
 
         o.cancel("배달 지연", at);
 
-        assertThat(o.getStatus()).isEqualTo(OrderStatus.CANCELED);
-        assertThat(o.getCanceledReason()).isEqualTo("배달 지연");
-        assertThat(o.getCanceledAt()).isEqualTo(at);
+        assertThat(o.status()).isEqualTo(OrderStatus.CANCELED);
+        assertThat(o.canceledReason()).isEqualTo("배달 지연");
+        assertThat(o.canceledAt()).isEqualTo(at);
     }
 }

@@ -1,5 +1,8 @@
 package com.baedal.support;
 
+import com.baedal.support.domain.Order;
+import com.baedal.support.domain.OrderMockService;
+import com.baedal.support.domain.OrderStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -28,16 +31,16 @@ class OrderMockServiceTest {
     @Test
     void order_2024_1234_is_DELIVERING_with_riderLocation() {
         Order o = service.findById("2024-1234").orElseThrow();
-        assertThat(o.getStatus()).isEqualTo(OrderStatus.DELIVERING);
-        assertThat(o.getRiderLocation()).isEqualTo("역삼역 사거리");
+        assertThat(o.status()).isEqualTo(OrderStatus.DELIVERING);
+        assertThat(o.riderLocation()).contains("역삼역 사거리");
     }
 
     @Test
     void order_2024_1238_is_pre_canceled_with_reason() {
         Order o = service.findById("2024-1238").orElseThrow();
-        assertThat(o.getStatus()).isEqualTo(OrderStatus.CANCELED);
-        assertThat(o.getCanceledReason()).isNotBlank();
-        assertThat(o.getCanceledAt()).isNotNull();
+        assertThat(o.status()).isEqualTo(OrderStatus.CANCELED);
+        assertThat(o.canceledReason()).isNotBlank();
+        assertThat(o.canceledAt()).isNotNull();
     }
 
     @Test

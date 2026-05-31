@@ -491,6 +491,208 @@ Spring AOP와 동일하게 Advisor는 체인으로 동작한다. `getOrder()`가
 
 ---
 
+---
+
+## Round 3: 대화 맥락 관리와 메모리 설계
+
+### 구현 내용
+
+| 파일 | 변경 |
+|---|---|
+| `memory/ChatMemoryConfig.java` | 3레이어 Bean 등록 (Repository / Memory / Advisor) |
+| `memory/SessionController.java` | 세션 조회·삭제·목록 엔드포인트 |
+| `AssistantChatClientConfig.java` | `memoryAdvisor`를 Advisor 체인에 추가 |
+| `AssistantController.java` | `X-Session-Id` 헤더 → `CONVERSATION_ID` 연결 |
+| `SupportController.java` | 동일 패턴 적용 |
+
+---
+
+### 1단계: 시나리오 5종 검증
+
+#### 시나리오 1 — 지시 대명사 해결 ("그거 언제 도착해요?")
+
+```bash
+# 1회차: 주문번호 언급
+curl -s -X POST http://localhost:8080/api/v1/assistant \
+  -H "Content-Type: application/json" -H "X-Session-Id: cust-A" \
+  -d '{"message":"2024-1234 어디쯤 있어요?"}'
+# → "현재 라이더는 역삼역 사거리 부근에서 배달 중이라고 합니다. 예상 도착 시간은 오전 1시 8분경입니다."
+
+# 2회차: "그거" — orderId 없음
+curl -s -X POST http://localhost:8080/api/v1/assistant \
+  -H "Content-Type: application/json" -H "X-Session-Id: cust-A" \
+  -d '{"message":"그거 언제 도착해요?"}'
+# → "현재 라이더는 역삼역 사거리 부근에서 배달 중이며, 예상 도착 시간은 오전 1시 8분경입니다."
+```
+
+**Memory 상태 (`GET /api/v1/session/cust-A/messages`):**
+```json
+[
+  {"type": "USER",      "content": "2024-1234 어디쯤 있어요?"},
+  {"type": "ASSISTANT", "content": "현재 라이더는 역삼역 사거리 부근에서 배달 중..."},
+  {"type": "USER",      "content": "그거 언제 도착해요?"},
+  {"type": "ASSISTANT", "content": "현재 라이더는 역삼역 사거리 부근에서 배달 중..."}
+]
+```
+
+**관찰**: 2회차에서 orderId 없이 "그거"만 보냈는데 LLM이 Memory에서 2024-1234를 꺼내 `getDeliveryStatus(2024-1234)`를 재호출했다. ✅
+
+---
+
+#### 시나리오 2 — 취소 대상 전환 (1234 → 1235)
+
+```bash
+curl -s -X POST http://localhost:8080/api/v1/assistant \
+  -H "Content-Type: application/json" -H "X-Session-Id: cust-B" \
+  -d '{"message":"2024-1234 취소해주세요"}'
+
+curl -s -X POST http://localhost:8080/api/v1/assistant \
+  -H "Content-Type: application/json" -H "X-Session-Id: cust-B" \
+  -d '{"message":"아, 그거 말고 2024-1235 취소해주세요"}'
+# → "2024-1235의 주문이 성공적으로 취소되었습니다."
+```
+
+**서버 로그:**
+```
+[Tool] cancelOrder(orderId=2024-1235, reason=고객 요청)
+```
+
+**관찰**: 2회차에서 "그거 말고 2024-1235"로 취소 대상이 1235로 전환되어 올바른 Tool이 호출됐다. ✅
+
+---
+
+#### 시나리오 3 — Memory에 이력 정상 저장
+
+`GET /api/v1/session/cust-A/messages`로 USER + ASSISTANT 메시지가 순서대로 쌓이는 것을 확인했다 (시나리오 1 Memory 상태 참고). ✅
+
+---
+
+#### 시나리오 4 — 세션 오염 테스트
+
+```bash
+# 세션 cust-C: cust-A/B의 대화 내용 전혀 모르는 상태
+curl -s -X POST http://localhost:8080/api/v1/assistant \
+  -H "Content-Type: application/json" -H "X-Session-Id: cust-C" \
+  -d '{"message":"그 주문 어디쯤이에요?"}'
+# → "주문번호를 알려주시겠어요? 그거에서 배달 상태를 확인해 드리겠습니다."
+```
+
+**관찰**: cust-C는 cust-A의 2024-1234 대화를 모른다. 세션 오염 없음. ✅
+
+---
+
+#### 시나리오 5 — Memory 삭제 후 맥락 소실
+
+```bash
+# 1) 주문번호 언급
+curl -s -X POST http://localhost:8080/api/v1/assistant \
+  -H "Content-Type: application/json" -H "X-Session-Id: cust-D" \
+  -d '{"message":"2024-1234 배달 상황 알려주세요"}'
+
+# 2) Memory 삭제
+curl -s -X DELETE http://localhost:8080/api/v1/session/cust-D
+
+# 3) Memory 비어 있음 확인
+curl -s http://localhost:8080/api/v1/session/cust-D/messages
+# → []
+
+# 4) "그거" 질문 → 맥락 없음
+curl -s -X POST http://localhost:8080/api/v1/assistant \
+  -H "Content-Type: application/json" -H "X-Session-Id: cust-D" \
+  -d '{"message":"그거 언제 도착해요?"}'
+# → "주문번호를 알려주시겠어요?"
+```
+
+**관찰**: DELETE 후 Memory가 `[]`로 비워지고 "그거"를 해석하지 못했다. ✅
+
+---
+
+### 설계 결정 문서
+
+#### MAX_MESSAGES = 20 선택 근거
+
+| 기준 | 계산 |
+|---|---|
+| 저장 단위 | USER + ASSISTANT = 한 턴에 메시지 2개 |
+| MAX_MESSAGES = 20 | 최대 10턴 분량 커버 |
+| 배달 상담 평균 | 3~6턴 (주문 확인 → 취소 요청 → 완료) |
+| 결론 | 평균 상담의 2배 여유. 토큰 폭증 없이 지시 대명사 해결 가능 |
+
+너무 작으면(2): 직전 USER/ASSISTANT 한 쌍만 남아 2턴 전 주문번호를 잃는다.  
+너무 크면(MAX_VALUE): 입력 토큰이 턴마다 선형 증가 → 비용/지연 감당 불가.
+
+---
+
+#### `X-Session-Id` 없을 때 `"default"` 폴백의 위험 시나리오
+
+**시나리오 1: 구버전 앱 클라이언트**
+앱 업데이트 전 구버전은 `X-Session-Id` 헤더를 보내지 않는다. 업데이트를 안 한 고객 A, B, C가 동시에 상담을 시작하면 모두 `"default"` 세션을 공유한다. A가 "2024-1234 어디있어요?"를 보낸 뒤 B가 "그거 취소해줘"라고 보내면 **B의 요청이 A의 주문을 취소**한다.
+
+**시나리오 2: 어뷰저가 의도적으로 헤더 생략**
+악의적 사용자가 헤더를 제거하고 반복 호출하면 `"default"` 세션에 다른 고객들의 대화가 쌓인다. "앞 고객이 뭘 물어봤어?"라고 물으면 LLM이 이전 대화 이력에서 **다른 고객의 주문번호·주소를 노출**할 수 있다.
+
+**프로덕션 대응**: 헤더 없으면 `400 Bad Request`를 반환한다.
+```java
+@RequestHeader(value = "X-Session-Id") String sessionId  // defaultValue 제거
+```
+
+---
+
+#### 세션 식별 실무 대안 비교
+
+| 방식 | 특징 | 배달 상담 장점 | 배달 상담 단점 |
+|---|---|---|---|
+| **HTTP 헤더 (`X-Session-Id`)** | 클라이언트가 관리, 모든 환경 통용 | 앱/웹/API 클라이언트 모두 지원, 구현 단순 | 클라이언트가 ID를 직접 정하면 보안 리스크 (아래 참고) |
+| **쿠키 / HTTP Session** | 브라우저 자동 관리 | 웹 챗봇 UI에서 별도 구현 불필요 | 모바일 앱에서 쿠키 관리 복잡, Sticky Session 필요 |
+| **JWT 클레임** | 인증 토큰에 세션 ID 내장 | 이미 JWT 인증이 있으면 추가 헤더 불필요 | JWT 없는 비로그인 상담에 적용 불가 |
+| **URL 경로 (`/session/{id}/chat`)** | URL에 세션 ID 명시 | 디버깅 편리 | URL에 세션 ID 노출 → 로그·브라우저 히스토리에 기록, 공유 위험 |
+
+---
+
+#### 클라이언트가 세션 ID를 직접 정하게 하는 방식의 보안 리스크
+
+**문제**: 클라이언트가 임의 값을 `X-Session-Id`에 넣을 수 있다.
+- 다른 고객의 세션 ID를 추측(`cust-1`, `cust-2`, ...)해 타인 대화 조회 가능
+- 서버 발급 ID 없이 UUID를 클라이언트가 생성하면 충돌 가능성 존재
+
+**대응 방안:**
+
+| 방법 | 설명 |
+|---|---|
+| **서버 발급 UUID** | 로그인 시 서버가 세션 ID를 생성해 응답에 포함, 클라이언트는 받은 ID만 사용 |
+| **JWT 서명 검증** | 세션 ID를 JWT 클레임에 넣고 서버가 서명 검증 → 위조 불가 |
+| **세션 ID ↔ 인증 사용자 바인딩** | 세션 ID가 로그인한 사용자 ID와 일치하는지 서버에서 검증 |
+
+---
+
+### 자가 점검 (1단계)
+
+- [x] `./gradlew bootRun` 정상 실행, `UnsupportedOperationException` 없음
+- [x] 시나리오 5종 응답 + Memory 상태 JSON README에 기록
+- [x] 시나리오 4에서 cust-C에 맥락 없음을 `/api/v1/session/ids`로 확인
+- [x] 시나리오 5에서 DELETE 후 Memory `[]` 확인
+- [x] MAX_MESSAGES 선택 근거 + 세션 ID 설계 결정 4개 기록
+
+---
+
+### 공통 학습 기록 (Round 3)
+
+#### 내가 배운 것
+
+Memory가 단순히 "대화를 저장하는 기능"이 아니라 **에이전트가 Tool 파라미터를 자율적으로 채우기 위한 전제 조건**이라는 것을 체감했다. "그거 취소해줘"처럼 orderId가 없는 요청에서 LLM이 이전 턴 ASSISTANT 응답에 적힌 주문번호를 꺼내 쓴다는 걸 로그로 직접 확인했다. Tool 메시지가 Memory에 저장되지 않는 이유도 납득이 됐다. JSON 전체가 매 턴 프롬프트에 쌓이면 토큰이 폭증하기 때문이다.
+
+3레이어 분리(Repository / Memory / Advisor)가 처음엔 과하게 느껴졌지만, "저장소를 바꿀 때는 Repository만, 크기 정책을 바꿀 때는 Memory만, 흐름 연결을 바꿀 때는 Advisor만 수정"이라는 변경 독립성이 명확해서 납득이 됐다.
+
+#### 의문점
+
+Tool 메시지가 Memory에 저장되지 않으므로 LLM이 "그거"를 해석하려면 ASSISTANT 응답 본문에 orderId가 포함돼 있어야 한다. 시스템 프롬프트로 이를 유도하지만 LLM이 항상 orderId를 응답에 포함시키는 것은 아니었다(시나리오 2 1회차에서 LLM이 주문번호를 되물었다). orderId가 응답에 없는 경우를 얼마나 신뢰할 수 있는지, 정확도를 높이는 프롬프트 전략이 궁금하다.
+
+또한 `MessageWindowChatMemory`가 오래된 메시지를 단순히 잘라버린다. 요약(summarization) 전략을 직접 구현한다면 "언제 요약을 트리거할지", "어떤 정보를 요약에서 보존할지"를 어떻게 판단해야 하는지 아직 모르겠다.
+
+#### Round 4에 시도하고 싶은 것
+
+Memory Advisor 옆에 `QuestionAnswerAdvisor`(RAG)가 나란히 붙는다고 한다. Memory는 "그 주문" 같은 세션 맥락을 제공하고, RAG는 "비 오는 날 배달 지연 보상 정책"처럼 사전 지식을 제공한다. 두 Advisor가 같은 체인에 붙으면 "어젯밤에 2024-1234 주문 비 때문에 늦었는데 보상받을 수 있나요?"처럼 맥락 + 정책 지식이 동시에 필요한 질문도 처리할 수 있을 것 같다. 이 두 Advisor가 충돌 없이 협력하는 방식을 확인하고 싶다.
+
 ## 자가 점검
 
 ### 1단계

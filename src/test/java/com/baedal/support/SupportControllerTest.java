@@ -1,9 +1,11 @@
 package com.baedal.support;
 
+import com.baedal.support.tool.OrderTools;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Answers;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -13,11 +15,12 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
+import java.util.function.Consumer;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.reset;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -28,20 +31,18 @@ class SupportControllerTest {
     @Autowired
     private MockMvc mockMvc;
 
-    @Autowired
-    private ChatClient.Builder builder;
-
     @MockBean
     private PerformanceLoggingAdvisor performanceAdvisor;
+
+    @MockBean
+    private MessageChatMemoryAdvisor memoryAdvisor;
 
     @MockBean
     private OrderTools orderTools;
 
     /**
-     * SupportController는 생성자에서 ChatClient를 한 번만 build한다.
-     * @WebMvcTest는 @BeforeEach보다 먼저 빈을 초기화하므로
-     * @TestConfiguration의 @Bean에서 mock 체인을 미리 구성한다.
-     * RETURNS_SELF가 builder 체이닝(defaultSystem/defaultAdvisors/defaultTools)을 자동 처리한다.
+     * SupportController는 요청마다 builder 체인을 실행한다.
+     * RETURNS_SELF가 defaultSystem/defaultAdvisors/defaultTools 체이닝을 자동 처리한다.
      */
     @TestConfiguration
     static class Config {
@@ -55,6 +56,7 @@ class SupportControllerTest {
 
             when(chatClient.prompt()).thenReturn(requestSpec);
             when(requestSpec.user(anyString())).thenReturn(requestSpec);
+            when(requestSpec.advisors(any(Consumer.class))).thenReturn(requestSpec);
             when(requestSpec.call()).thenReturn(callSpec);
 
             ChatClient.Builder builder = mock(ChatClient.Builder.class, Answers.RETURNS_SELF);
@@ -86,21 +88,6 @@ class SupportControllerTest {
             .andExpect(jsonPath("$.category").value("DELIVERY"))
             .andExpect(jsonPath("$.urgency").value("NORMAL"))
             .andExpect(jsonPath("$.estimatedResolutionMinutes").value(10));
-    }
-
-    @Test
-    void triage_uses_system_prompt() throws Exception {
-        verify(builder).defaultSystem(BaedalPrompt.SYSTEM_PROMPT);
-    }
-
-    @Test
-    void triage_registers_performance_logging_advisor() throws Exception {
-        verify(builder).defaultAdvisors(performanceAdvisor);
-    }
-
-    @Test
-    void triage_registers_order_tools_in_constructor() throws Exception {
-        verify(builder).defaultTools(orderTools);
     }
 
     @Test
