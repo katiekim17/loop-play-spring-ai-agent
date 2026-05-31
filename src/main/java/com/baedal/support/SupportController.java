@@ -13,27 +13,22 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/support")
 public class SupportController {
 
-    private final ChatClient.Builder builder;
-    private final PerformanceLoggingAdvisor performanceAdvisor;
-    private final OrderTools orderTools;
+    private final ChatClient chatClient;
 
     public SupportController(ChatClient.Builder builder,
                              PerformanceLoggingAdvisor performanceAdvisor,
                              OrderTools orderTools) {
-        this.builder = builder;
-        this.performanceAdvisor = performanceAdvisor;
-        this.orderTools = orderTools;
+        this.chatClient = builder
+                .defaultSystem(BaedalPrompt.SYSTEM_PROMPT)
+                .defaultAdvisors(performanceAdvisor)
+                .defaultTools(orderTools)
+                .build();
     }
 
     @PostMapping
     public SupportResponse triage(@Valid @RequestBody ChatRequest req) {
-        return builder
-                .defaultSystem(BaedalPrompt.SYSTEM_PROMPT)
-                .defaultAdvisors(performanceAdvisor)
-                .build()
-                .prompt()
+        return chatClient.prompt()
                 .user(req.message())
-                .tools(orderTools)
                 .call()
                 .entity(SupportResponse.class);
     }

@@ -42,10 +42,18 @@ public class OrderTools {
         return orderService.findById(orderId).map(this::toDeliveryView).orElse(null);
     }
 
-    @Tool(description = "Cancel an order. Call this immediately when the customer requests cancellation. Do not judge eligibility yourself — this tool handles all cases and returns CANCELED, ALREADY_CANCELED, NOT_CANCELABLE, or NOT_FOUND.")
+    @Tool(description = """
+            주어진 주문번호의 주문을 취소한다.
+            고객이 명시적으로 취소를 요청할 때 즉시 호출한다.
+            취소 가능 여부는 이 Tool이 내부에서 판정하므로, 호출 전에 상태를 추측하지 않는다.
+            취소 가능 조건: 주문 상태가 CREATED 또는 ACCEPTED인 경우.
+            조리가 시작된(COOKING 이후) 주문이나 이미 취소된 주문은 자동 취소가 불가하다.
+            결과는 CancelOrderResult 객체로 반환되며, outcome 필드(CANCELED / ALREADY_CANCELED /
+            NOT_CANCELABLE / NOT_FOUND)에 따라 고객에게 다른 안내가 필요하다.
+            """)
     public CancelOrderResult cancelOrder(
-            @ToolParam(description = "Order ID to cancel, e.g. 2024-1234") String orderId,
-            @ToolParam(description = "Cancellation reason from the customer. Use '고객 요청' if not stated.") String reason) {
+            @ToolParam(description = "취소할 주문번호. 예: 2024-1234") String orderId,
+            @ToolParam(description = "고객이 말한 취소 사유. 사유 발화가 없으면 빈 문자열을 전달한다.") String reason) {
         log.info("[Tool] cancelOrder(orderId={}, reason={})", orderId, reason);
 
         Order order = orderService.findById(orderId).orElse(null);
