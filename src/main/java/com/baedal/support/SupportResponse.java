@@ -7,7 +7,9 @@ public record SupportResponse(
         Category category,
         Urgency urgency,
         String nextAction,
-        List<String> neededInfo
+        List<String> neededInfo,
+        Integer estimatedResolutionMinutes,
+        Actionability actionability
 ) {
     public enum Category { ORDER, DELIVERY, REFUND, PAYMENT, ETC }
     public enum Urgency  { LOW, NORMAL, HIGH, CRITICAL }

@@ -1,16 +1,21 @@
 package com.baedal.support;
 
-import lombok.RequiredArgsConstructor;
+import jakarta.validation.Valid;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 
 @RestController
-@RequiredArgsConstructor
 @RequestMapping("/api/v1/chat/stream")
 public class StreamingChatController {
 
-    private final ChatClient.Builder builder;
+    private final ChatClient chatClient;
+
+    public StreamingChatController(ChatClient.Builder builder) {
+        this.chatClient = builder
+                .defaultSystem(BaedalPrompt.SYSTEM_PROMPT)
+                .build();
+    }
 
     @PostMapping(produces = "text/event-stream;charset=UTF-8")
     public Flux<String> chatStream(@RequestBody ChatRequest req) {

@@ -13,6 +13,11 @@ spring:
     driver-class-name: org.postgresql.Driver
 
   ai:
+    chat:
+      memory:
+        repository:
+          jdbc:
+            initialize-schema: never
     ollama:
       base-url: http://localhost:11434
       chat:

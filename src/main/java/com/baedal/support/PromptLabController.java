@@ -1,6 +1,9 @@
 package com.baedal.support;
 
-import lombok.RequiredArgsConstructor;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.web.bind.annotation.*;
 
@@ -10,11 +13,14 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 @RestController
-@RequiredArgsConstructor
 @RequestMapping("/api/v1/prompt-lab")
 public class PromptLabController {
 
-    private final ChatClient.Builder builder;
+    private final ChatClient chatClient;
+
+    public PromptLabController(ChatClient.Builder builder) {
+        this.chatClient = builder.build();
+    }
 
     @PostMapping
     public PromptLabResult experiment(@RequestBody PromptLabRequest req) {
@@ -36,9 +42,9 @@ public class PromptLabController {
     }
 
     public record PromptLabRequest(
-            String systemPrompt,
-            String message,
-            int repeat
+            @NotBlank String systemPrompt,
+            @NotBlank String message,
+            @Min(1) @Max(100) int repeat
     ) {}
 
     public record PromptLabResult(
