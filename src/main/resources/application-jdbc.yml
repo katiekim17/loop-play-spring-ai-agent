@@ -42,7 +42,7 @@ spring:
       memory:
         repository:
           jdbc:
-            initialize-schema: embedded   # always / never / embedded
+            initialize-schema: always   # always / never / embedded — file H2 는 embedded 로 분류 안 돼서 always 필요. schema-h2.sql 의 CREATE TABLE IF NOT EXISTS 가 멱등성을 보장.
 
 logging:
   level:

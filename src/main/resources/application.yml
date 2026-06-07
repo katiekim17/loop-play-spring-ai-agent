@@ -1,7 +1,18 @@
 spring:
   application:
     name: baedal-support-agent
+  # 3단계 — JDBC 의존성을 추가했지만 기본 프로필에서는 InMemory 만 사용한다.
+  # JDBC 자동구성을 완전히 제외하려 했으나 @WebMvcTest 슬라이스에서 적용이 안 돼,
+  # 다음 두 가지로 우회한다:
+  #   1) ChatMemoryConfig.chatMemoryRepository() 에 @Primary 를 붙여 InMemory 우선
+  #   2) initialize-schema: never 로 JDBC 빈은 만들어지지만 H2 schema init 은 건너뛴다
+  # jdbc 프로필에서는 InMemory 빈 자체가 안 만들어져서 JDBC 가 단독으로 동작한다.
   ai:
+    chat:
+      memory:
+        repository:
+          jdbc:
+            initialize-schema: never
     ollama:
       base-url: http://localhost:11434
       chat:

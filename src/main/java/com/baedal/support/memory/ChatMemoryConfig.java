@@ -7,6 +7,8 @@ import org.springframework.ai.chat.memory.InMemoryChatMemoryRepository;
 import org.springframework.ai.chat.memory.MessageWindowChatMemory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
+import org.springframework.context.annotation.Profile;
 
 /**
  * 3주차 — Chat Memory 설정.
@@ -50,7 +52,20 @@ public class ChatMemoryConfig {
     // 설계 결정 질문 (README):
     //   - InMemory로 충분한 상황 vs JDBC가 필요한 상황의 경계는 어디인가?
     //     (서버 재시작 / 멀티 인스턴스 / 감사 요구 / 개인정보 보존 기간 중 어느 것이 먼저 깨지는가?)
+    //
+    // 3단계 — @Profile("!jdbc") 한정. jdbc 프로필에서는 spring-ai-starter-model-
+    // chat-memory-repository-jdbc 가 자동 구성한 JdbcChatMemoryRepository 가 주입된다.
+    //
+    // @Primary 가 필요한 이유:
+    //   JDBC 의존성을 추가하면 기본 프로필에서도 JdbcChatMemoryRepository 가 자동 생성된다.
+    //   yaml 의 spring.autoconfigure.exclude 는 @WebMvcTest 슬라이스에서 적용되지 않아
+    //   완전 제외가 어렵다. 대신 @Primary 로 InMemory 가 우선 주입되도록 명시한다.
+    //   JDBC 빈은 만들어지지만 *사용되지 않는다*. schema init 은 application.yml 의
+    //   initialize-schema: never 로 건너뛴다.
+    //   jdbc 프로필에서는 이 InMemory 빈 자체가 만들어지지 않아 JDBC 가 단독 후보가 된다.
     @Bean
+    @Profile("!jdbc")
+    @Primary
     public ChatMemoryRepository chatMemoryRepository() {
         return new InMemoryChatMemoryRepository();
     }
