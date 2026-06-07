@@ -78,8 +78,17 @@ public class RagConfig {
     //   - 만약 문서가 "사용자 리뷰 10만 건"이라면 청크 크기 선택이 어떻게 달라져야 하는가?
     @Bean
     public TokenTextSplitter tokenTextSplitter() {
-        // TODO: TokenTextSplitter 인스턴스 반환
-        return null;
+        // chunkSize=800 토큰 / minChunkSizeChars=350 글자 — 단위 다른 점 주의.
+        // 정책 문서는 조항 단위(200~300토큰)로 잘 끊어져 있어 800이면 2~3개 조항이
+        // 한 청크가 된다. minChunkSizeChars 350은 짧은 헤더("## 변경 이력" 같은)가
+        // 노이즈 청크로 임베딩되는 것을 막아 유사도 검색 입력 품질을 보호한다.
+        return new TokenTextSplitter(
+                800,    // chunkSize (토큰)
+                350,    // minChunkSizeChars (글자) — 이보다 작으면 앞 청크에 병합
+                5,      // minChunkLengthToEmbed
+                10_000, // maxNumChunks
+                true    // keepSeparator
+        );
     }
 
     // TODO [1단계-D] QuestionAnswerAdvisor Bean을 등록하라.
@@ -106,7 +115,18 @@ public class RagConfig {
     //   - similarityThreshold만으로 환각을 100% 막을 수 있는가? Fallback 프롬프트와 어떻게 협업하는가?
     @Bean
     public QuestionAnswerAdvisor questionAnswerAdvisor(VectorStore vectorStore) {
-        // TODO: SearchRequest + QuestionAnswerAdvisor 빌드해 반환 (order=20)
-        return null;
+        SearchRequest searchRequest = SearchRequest.builder()
+                .topK(TOP_K)
+                .similarityThreshold(SIMILARITY_THRESHOLD)
+                .build();
+        // order=20: Memory(10) 뒤, Performance(100) 앞.
+        // 기본 QuestionAnswerAdvisor 는 마지막 USER 메시지만 임베딩하므로 단순 모드에선
+        // 순서 영향이 미미하다. 그러나 향후 RetrievalAugmentationAdvisor / Query Rewriter 도입 시
+        // Memory 가 먼저 작동해야 대화 맥락 기반 쿼리 재작성이 가능하다.
+        // → 원칙 차원에서 Memory 뒤에 둠. 3단계에서 order(5)로 실험하며 효과 직접 관찰.
+        return QuestionAnswerAdvisor.builder(vectorStore)
+                .searchRequest(searchRequest)
+                .order(20)
+                .build();
     }
 }
