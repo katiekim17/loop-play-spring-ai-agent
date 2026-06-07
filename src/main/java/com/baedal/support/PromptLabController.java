@@ -23,21 +23,15 @@ public class PromptLabController {
     }
 
     @PostMapping
-    public PromptLabResult experiment(@RequestBody PromptLabRequest req) {
-        var results = new ArrayList<SupportResponse>();
-
-        var client = builder
-                .defaultSystem(req.systemPrompt())
-                .build();
-
+    public PromptLabResult experiment(@Valid @RequestBody PromptLabRequest req) {
+        List<SupportResponse> results = new ArrayList<>();
         for (int i = 0; i < req.repeat(); i++) {
-            var response = client.prompt()
+            results.add(chatClient.prompt()
+                    .system(req.systemPrompt())
                     .user(req.message())
                     .call()
-                    .entity(SupportResponse.class);
-            results.add(response);
+                    .entity(SupportResponse.class));
         }
-
         return PromptLabResult.from(results);
     }
 
