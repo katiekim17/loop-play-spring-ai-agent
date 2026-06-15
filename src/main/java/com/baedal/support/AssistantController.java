@@ -61,32 +61,32 @@ public class AssistantController {
             return handoff.message();
         }
 
-        // TODO [4단계-A] try/catch로 감싸서 LLM/Tool/VectorStore 예외 시 fallback(e)로 안전 응답을 돌려주라.
-        //    스택트레이스는 절대 외부에 노출하지 않는다(log.error로 내부 로그에만 남김).
-        return builder
-                .defaultSystem(BaedalPrompt.SYSTEM_PROMPT)
-                // Advisor 체인 — 각 Advisor의 getOrder() 기준으로 정렬되어 실행된다.
-                //   inputGuardrail(5) → memoryAdvisor(10) → ragAdvisor(20)
-                //   → outputGuardrail(50) → performanceAdvisor(100)
-                .defaultAdvisors(inputGuardrail, memoryAdvisor, ragAdvisor, outputGuardrail, performanceAdvisor)
-                .defaultTools(orderTools)
-                .build()
-                .prompt()
-                .user(req.message())
-                // 이 호출에 한해 Memory가 사용할 conversationId를 지정한다.
-                .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, sessionId))
-                .call()
-                .content();
+        // LLM/Tool/VectorStore 호출은 외부 의존이라 실패할 수 있다.
+        // 예외 시 스택트레이스를 노출하지 않고 fallback(e)로 안전 응답을 돌려준다.
+        try {
+            return builder
+                    .defaultSystem(BaedalPrompt.SYSTEM_PROMPT)
+                    // Advisor 체인 — 각 Advisor의 getOrder() 기준으로 정렬되어 실행된다.
+                    //   inputGuardrail(5) → memoryAdvisor(10) → ragAdvisor(20)
+                    //   → outputGuardrail(50) → performanceAdvisor(100)
+                    .defaultAdvisors(inputGuardrail, memoryAdvisor, ragAdvisor, outputGuardrail, performanceAdvisor)
+                    .defaultTools(orderTools)
+                    .build()
+                    .prompt()
+                    .user(req.message())
+                    // 이 호출에 한해 Memory가 사용할 conversationId를 지정한다.
+                    .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, sessionId))
+                    .call()
+                    .content();
+        } catch (Exception e) {
+            return fallback(e);
+        }
     }
 
     /**
      * LLM / Tool / VectorStore 호출 실패 시 고객에게 보낼 안전한 Fallback 응답.
-     * 스택 트레이스는 절대 노출하지 않는다. 내부 로그에만 남긴다.
-     *
-     * TODO [4단계-B] 아래 메서드를 활용하여 예외 시 안내 메시지를 돌려주는 흐름을 완성하라.
-     *   메시지 톤은 고객 친화적으로, 장애 상황에서도 상담원 연결 경로("1600-0987")를 안내할 것.
+     * 스택 트레이스는 절대 노출하지 않는다. 내부 로그(log.error)에만 남긴다.
      */
-    @SuppressWarnings("unused")
     private String fallback(Throwable e) {
         log.error("[Assistant] 응답 생성 실패 — {}", e.toString(), e);
         return "죄송해요, 지금 일시적인 문제가 발생했어요. 잠시 후 다시 시도하시거나, "
