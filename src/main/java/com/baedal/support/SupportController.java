@@ -5,17 +5,21 @@ import com.baedal.support.guardrail.InputGuardrailAdvisor;
 import com.baedal.support.guardrail.OutputGuardrailAdvisor;
 import com.baedal.support.tool.OrderTools;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.client.advisor.vectorstore.QuestionAnswerAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 /**
  * Structured Output + Tool Calling + Chat Memory + RAG + Guardrail 통합 엔드포인트.
  * <p>
  * 5주차 변경점: Input/Output Guardrail Advisor를 체인에 추가.
  */
+@Slf4j
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/support")
@@ -34,14 +38,21 @@ public class SupportController {
     public SupportResponse triage(@RequestBody ChatRequest req,
                                   @RequestHeader(value = "X-Session-Id", defaultValue = "default") String sessionId) {
 
-        // TODO [3단계-C] Handoff 선검사를 추가하라.
-        //   handoffDetector.detect(req.message())의 handoff==true면 Structured Output 스키마에 맞춰
-        //   SupportResponse를 수동 조립하여 반환한다.
-        //     - answer: decision.message()
-        //     - category: Category.ETC
-        //     - urgency:  Urgency.HIGH
-        //     - action:   "상담원 연결 진행"
-        //     - nextSteps: List.of() 또는 ["상담원 응대 대기"]
+        // Handoff 선검사 — LLM 호출 전에 상담원 전환 여부를 판별해 토큰/지연을 아낀다.
+        HandoffDetector.HandoffDecision handoff = handoffDetector.detect(req.message());
+        if (handoff.handoff()) {
+            log.info("[Support] Handoff 전환 — reason={} (LLM 미호출)", handoff.reason());
+            // Structured Output 스키마에 맞춰 수동 조립.
+            return new SupportResponse(
+                    handoff.message(),
+                    SupportResponse.Category.ETC,
+                    SupportResponse.Urgency.HIGH,
+                    "상담원 연결 진행",
+                    List.of("상담원 응대 대기"),
+                    null,
+                    SupportResponse.Actionability.ESCALATED
+            );
+        }
 
         return builder
                 .defaultSystem(BaedalPrompt.SYSTEM_PROMPT)
