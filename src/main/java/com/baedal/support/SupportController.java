@@ -43,12 +43,12 @@ public class SupportController {
         //     - action:   "상담원 연결 진행"
         //     - nextSteps: List.of() 또는 ["상담원 응대 대기"]
 
-        // TODO [1단계-C] defaultAdvisors에 inputGuardrail / outputGuardrail을 추가하라.
-        //   권장 순서: inputGuardrail(5) → memoryAdvisor(10) → ragAdvisor(20)
-        //            → outputGuardrail(50) → performanceAdvisor(100)
         return builder
                 .defaultSystem(BaedalPrompt.SYSTEM_PROMPT)
-                .defaultAdvisors(memoryAdvisor, ragAdvisor, performanceAdvisor)
+                // Advisor 체인 — 각 Advisor의 getOrder() 기준으로 정렬되어 실행된다.
+                //   inputGuardrail(5) → memoryAdvisor(10) → ragAdvisor(20)
+                //   → outputGuardrail(50) → performanceAdvisor(100)
+                .defaultAdvisors(inputGuardrail, memoryAdvisor, ragAdvisor, outputGuardrail, performanceAdvisor)
                 .defaultTools(orderTools)
                 .build()
                 .prompt()

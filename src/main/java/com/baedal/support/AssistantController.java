@@ -62,12 +62,10 @@ public class AssistantController {
         //    스택트레이스는 절대 외부에 노출하지 않는다(log.error로 내부 로그에만 남김).
         return builder
                 .defaultSystem(BaedalPrompt.SYSTEM_PROMPT)
-                // TODO [1단계-B] Advisor 체인에 inputGuardrail / outputGuardrail을 추가하라.
-                //   권장 순서: inputGuardrail(5) → memoryAdvisor(10) → ragAdvisor(20)
-                //            → outputGuardrail(50) → performanceAdvisor(100)
-                //   왜 inputGuardrail이 Memory보다 앞이고, outputGuardrail이 Performance보다 안쪽인지를
-                //   README 설계 결정 섹션에 서술하라.
-                .defaultAdvisors(memoryAdvisor, ragAdvisor, performanceAdvisor)
+                // Advisor 체인 — 각 Advisor의 getOrder() 기준으로 정렬되어 실행된다.
+                //   inputGuardrail(5) → memoryAdvisor(10) → ragAdvisor(20)
+                //   → outputGuardrail(50) → performanceAdvisor(100)
+                .defaultAdvisors(inputGuardrail, memoryAdvisor, ragAdvisor, outputGuardrail, performanceAdvisor)
                 .defaultTools(orderTools)
                 .build()
                 .prompt()
