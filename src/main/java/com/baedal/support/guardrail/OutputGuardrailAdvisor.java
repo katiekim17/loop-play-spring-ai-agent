@@ -75,8 +75,32 @@ public class OutputGuardrailAdvisor implements CallAdvisor {
      */
     @Override
     public ChatClientResponse adviseCall(ChatClientRequest request, CallAdvisorChain chain) {
-        // TODO [2단계-A] 위 명세에 맞춰 Output 검사/치환을 구현하고 아래 기본 체인 통과를 제거하라.
-        return chain.nextCall(request);
+        // 1) LLM 응답을 받는다 (체인 진행).
+        ChatClientResponse response = chain.nextCall(request);
+        String content = extractContent(response);
+
+        // 2) 빈 응답 → 안내 문구로 대체.
+        if (content == null || content.isBlank()) {
+            return replace(response, request, EMPTY_FALLBACK, "EMPTY_RESPONSE");
+        }
+
+        // 3) 시스템 프롬프트 내부 섹션 유출 → 통째로 안내 문구로 대체.
+        for (String marker : LEAK_MARKERS) {
+            if (content.contains(marker)) {
+                return replace(response, request, LEAK_FALLBACK, "PROMPT_LEAK");
+            }
+        }
+
+        // 4) 민감 정보 포함 → 값만 마스킹해 맥락은 유지.
+        if (masker.containsSensitive(content)) {
+            // 주의: 원본(content)은 마스킹 전 평문이므로 DEBUG 레벨로만 남긴다. INFO 이상으로 올리지 말 것.
+            String masked = masker.mask(content);
+            log.debug("[OutputGuardrail] 마스킹 대조 — before='{}' after='{}'", content, masked);
+            return replace(response, request, masked, "SENSITIVE_MASKED");
+        }
+
+        // 5) 문제 없음 → 원본 그대로.
+        return response;
     }
 
     private String extractContent(ChatClientResponse response) {

@@ -61,8 +61,18 @@ public class SensitiveDataMasker {
      *   raw에서 숫자만 뽑으려면 raw.replaceAll("\\D", "").
      */
     private String maskPhone(String text) {
-        // TODO [2단계-B] 전화번호 마스킹 구현
-        return text;
+        Matcher matcher = PHONE_KR.matcher(text);
+        StringBuffer sb = new StringBuffer();
+        while (matcher.find()) {
+            String digits = matcher.group().replaceAll("\\D", "");
+            // 앞 3자리(010 등) + 가운데 마스킹 + 뒤 4자리. 예: 010-****-5678
+            String masked = digits.length() >= 7
+                    ? digits.substring(0, 3) + "-****-" + digits.substring(digits.length() - 4)
+                    : "***";
+            matcher.appendReplacement(sb, Matcher.quoteReplacement(masked));
+        }
+        matcher.appendTail(sb);
+        return sb.toString();
     }
 
     /**
@@ -72,8 +82,19 @@ public class SensitiveDataMasker {
      *   로컬 파트 길이가 1 이하면 전체를 "*" 로.
      */
     private String maskEmail(String text) {
-        // TODO [2단계-C] 이메일 마스킹 구현
-        return text;
+        Matcher matcher = EMAIL.matcher(text);
+        StringBuffer sb = new StringBuffer();
+        while (matcher.find()) {
+            String email = matcher.group();
+            int at = email.indexOf('@');
+            String local = email.substring(0, at);
+            String domain = email.substring(at); // '@' 포함
+            // 로컬 파트 첫 글자만 남기고 마스킹. 길이 1 이하면 전체를 *로.
+            String maskedLocal = local.length() <= 1 ? "*" : local.charAt(0) + "***";
+            matcher.appendReplacement(sb, Matcher.quoteReplacement(maskedLocal + domain));
+        }
+        matcher.appendTail(sb);
+        return sb.toString();
     }
 
     /**
@@ -82,8 +103,7 @@ public class SensitiveDataMasker {
      * TODO [2단계-D] ROAD_ADDRESS.matcher(text).replaceAll(...) 한 줄이면 충분하다.
      */
     private String maskAddress(String text) {
-        // TODO [2단계-D] 주소 마스킹 구현
-        return text;
+        return ROAD_ADDRESS.matcher(text).replaceAll("[주소 비공개]");
     }
 
     /**
