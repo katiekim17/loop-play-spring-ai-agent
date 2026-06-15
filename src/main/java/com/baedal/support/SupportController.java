@@ -4,6 +4,7 @@ import com.baedal.support.guardrail.HandoffDetector;
 import com.baedal.support.guardrail.InputGuardrailAdvisor;
 import com.baedal.support.guardrail.OutputGuardrailAdvisor;
 import com.baedal.support.tool.OrderTools;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
@@ -35,7 +36,7 @@ public class SupportController {
     private final OrderTools orderTools;
 
     @PostMapping
-    public SupportResponse triage(@RequestBody ChatRequest req,
+    public SupportResponse triage(@Valid @RequestBody ChatRequest req,
                                   @RequestHeader(value = "X-Session-Id", defaultValue = "default") String sessionId) {
 
         // Handoff 선검사 — LLM 호출 전에 상담원 전환 여부를 판별해 토큰/지연을 아낀다.

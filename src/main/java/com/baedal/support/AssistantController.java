@@ -4,6 +4,7 @@ import com.baedal.support.guardrail.HandoffDetector;
 import com.baedal.support.guardrail.InputGuardrailAdvisor;
 import com.baedal.support.guardrail.OutputGuardrailAdvisor;
 import com.baedal.support.tool.OrderTools;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
@@ -48,7 +49,7 @@ public class AssistantController {
     private final OrderTools orderTools;
 
     @PostMapping
-    public String ask(@RequestBody ChatRequest req,
+    public String ask(@Valid @RequestBody ChatRequest req,
                       @RequestHeader(value = "X-Session-Id", defaultValue = "default") String sessionId) {
 
         log.info("[Assistant] sessionId={}, message={}", sessionId, req.message());
